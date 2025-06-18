@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+  # API Gateway using YARP
+  yarp-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yarp-gateway
+    ports:
+      - "8000:80"
+    depends_on:
+      - catalog-api
+      - basket-api
+      - discount-api
+      - ordering-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - microservices-network
+
+  # Catalog API
+  catalog-api:
+    image: catalog-api:latest
+    container_name: catalog-api
+    ports:
+      - "5001:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__CatalogDb=Host=postgres;Database=CatalogDb;Username=postgres;Password=postgres
+    depends_on:
+      - postgres
+    networks:
+      - microservices-network
+
+  # Basket API
+  basket-api:
+    image: basket-api:latest
+    container_name: basket-api
+    ports:
+      - "5002:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__Redis=redis:6379
+      - GrpcSettings__DiscountUrl=http://discount-api
+    depends_on:
+      - redis
+      - discount-api
+    networks:
+      - microservices-network
+
+  # Discount API (gRPC)
+  discount-api:
+    image: discount-api:latest
+    container_name: discount-api
+    ports:
+      - "5003:80"
+      - "5103:81" # gRPC port
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DiscountDb=Data Source=discount.db
+    networks:
+      - microservices-network
+
+  # Ordering API
+  ordering-api:
+    image: ordering-api:latest
+    container_name: ordering-api
+    ports:
+      - "5004:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__OrderingDb=Server=sqlserver;Database=OrderingDb;User Id=sa;Password=Password123!;TrustServerCertificate=true;
+      - RabbitMQ__Host=rabbitmq
+    depends_on:
+      - sqlserver
+      - rabbitmq
+    networks:
+      - microservices-network
+
+  # Infrastructure services
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=CatalogDb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - microservices-network
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - microservices-network
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=Password123!
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    networks:
+      - microservices-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - microservices-network
+
+volumes:
+  postgres_data:
+  sqlserver_data:
+
+networks:
+  microservices-network:
+    driver: bridge

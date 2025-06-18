@@ -1,0 +1,136 @@
+Catalog Microservice Technical Design Document
+Version: 1.0
+Date: June 1, 2025
+Author: trinhcv
+
+Table of Contents
+Introduction
+Application Use Cases
+Architecture Overview
+Core Technologies & Libraries
+Design Patterns & Principles
+Domain Models
+REST API Endpoints of Catalog Microservice
+Implementation Details
+8.1. Infrastructure & Data Interaction
+8.2. Database Seeding
+8.3. Feature Development (Vertical Slices)
+8.4. Validation (MediatR Pipeline Behaviours & FluentValidation)
+8.5. Object Mapping
+Project Folder Structure
+Monitoring & Operations
+10.1. Health Checks in ASP.NET Core
+10.2. Containerization
+1. Introduction
+This document outlines the technical design and architectural patterns employed in the development of the Catalog Microservice. The service is designed to manage product and category information, providing a robust and scalable API for e-commerce or similar applications. It leverages modern .NET technologies and architectural principles to ensure high performance, maintainability, and extensibility.
+
+2. Application Use Cases
+The primary goal of the Catalog Microservice is to handle the core operations related to product and category management. The main use cases involve retrieving and managing product listings.
+
+CRUD (Create, Read, Update, Delete) Operations:
+
+Listing Products and Categories: Retrieve a list of all available products and categories.
+Get Product with Product Id: Fetch details of a specific product using its unique identifier.
+Get Products with Category: Retrieve products filtered by a specific category.
+Create new Product: Add a new product entry to the catalog.
+Update Product: Modify existing product details.
+Delete Product: Remove a product from the catalog.
+3. Architecture Overview
+The Catalog Microservice is implemented as a standalone microservice, containerized using Docker, and interacts with a PostgreSQL database.
+
+Internal "Catalog" Microservice Architecture:
+The internal architecture adheres to a Vertical Slice Architecture combined with CQRS (Command Query Responsibility Segregation).
+
+Client Interaction: Clients (e.g., UI) communicate with the Catalog Microservice via external IP and port, which are then routed to an internal IP and port of the Docker container.
+Layers: The application is logically structured into:
+UI (User Interface): Represents the client-facing layer (external to the microservice).
+Application: Orchestrates business logic, handles commands and queries.
+Domain: Contains the core business entities and rules.
+Infrastructure: Manages external concerns like data access (PostgreSQL), integrations, and utilities.
+CQRS: Operations are divided into Commands (for write operations like Create, Update, Delete) and Queries (for read operations like List, Get).
+Data Store: PostgreSQL database serves as the persistent data store.
+4. Core Technologies & Libraries
+The following key technologies and NuGet packages are utilized in the project:
+
+.NET 8 (ASP.NET Core): The foundational framework for building the web API.
+PostgreSQL: The relational database used for data storage.
+Marten: A .NET Transactional Document DB for PostgreSQL, leveraging PostgreSQL's JSON capabilities for storing, querying, and managing documents. It provides a flexible document database approach while maintaining the reliability of PostgreSQL.
+MediatR: A library that simplifies the implementation of the CQRS and Mediator patterns, facilitating in-process messaging and reducing direct dependencies.
+Carter: A lightweight, convention-based routing library for ASP.NET Core that simplifies defining API endpoints with clean and concise code.
+Mapster: A fast and configurable object mapper that simplifies the task of mapping objects between different layers (e.g., DTOs to Domain Models).
+FluentValidation: A .NET library for building strongly-typed validation rules, ensuring inputs are correct before processing.
+Docker: Used for containerization, enabling consistent deployment across various environments.
+5. Design Patterns & Principles
+The Catalog Microservice incorporates several design patterns and principles to enhance its design and maintainability:
+
+CQRS Pattern (Command Query Responsibility Segregation): Divides operations into Commands (write) and Queries (read). This separation can lead to better scalability, performance optimization, and clearer code organization.
+Mediator Pattern: Facilitates object interaction through a 'mediator' (implemented via MediatR), reducing direct dependencies between objects and simplifying communications.
+Dependency Injection (DI): A core feature of ASP.NET Core, allowing for loose coupling and testability by injecting dependencies rather than hard-coding them.
+Minimal APIs and Routing in ASP.NET 8: Utilized to simplify endpoint definitions, providing a lightweight syntax for routing and handling HTTP requests, promoting cleaner and more concise code.
+ORM Pattern (Object-Relational Mapping): Marten, while operating as a document DB, serves an ORM-like role by abstracting database interactions and allowing work with database objects using high-level C# code.
+6. Domain Models
+The primary domain model for the Catalog Microservice is Product, which is associated with Category.
+
+Product Model:
+C#
+
+public class Product
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; }
+    public List<string> Category { get; set; } // Representing categories as a list of strings
+    public string Description { get; set; }
+    public string ImageFile { get; set; }
+    public decimal Price { get; set; }
+}
+Relationship: Product has a 1..N relationship with Category (a product can belong to multiple categories).
+7. REST API Endpoints of Catalog Microservice
+The microservice exposes the following RESTful API endpoints:
+
+Method	Request URI	Use Cases
+GET	/products	List all products
+GET	/products/{id}	Fetch a specific product
+GET	/products/category	Get products by category
+POST	/products	Create a new product
+PUT	/products/{id}	Update a product
+DELETE	/products/{id}	Remove a product
+
+Xuất sang Trang tính
+8. Implementation Details
+8.1. Infrastructure & Data Interaction
+Database: PostgreSQL is used as the underlying database.
+Marten for PostgreSQL Interaction: Marten is configured to use PostgreSQL as a Document DB. It leverages PostgreSQL's native JSON capabilities for storing, querying, and managing product and category documents directly within the relational database. This combines the flexibility of a document database with the reliability of a relational database.
+8.2. Database Seeding
+Purpose: Seeding is essential for initializing the database with baseline data for development or initial deployment.
+Method: Marten provides an IInitialData interface for this purpose.
+Implementation: Implement the IInitialData interface to seed the CatalogDb with predefined products. This interface allows Marten to automatically populate the database when it's first initialized.
+8.3. Feature Development (Vertical Slices)
+Product features (e.g., CreateProduct, GetProduct) are developed in dedicated "Vertical Slices."
+Each slice encompasses all components related to a specific feature, including:
+Commands/Queries: Data transfer objects for write/read operations.
+Handlers: Logic units that process Commands and Queries using MediatR.
+8.4. Validation (MediatR Pipeline Behaviours & FluentValidation)
+FluentValidation: A .NET library for building strongly-typed validation rules.
+Integration: FluentValidation is integrated with MediatR by creating pipeline behaviors.
+Process: Validation rules are defined in separate classes using a fluent interface to specify conditions that each property of your models must satisfy. This process occurs before requests reach their actual handlers within the MediatR pipeline.
+Benefit: Combining MediatR with FluentValidation centralizes cross-cutting concerns like input validation, leading to cleaner and more maintainable code.
+8.5. Object Mapping
+Mapster: Utilized for efficient object mapping between different layers of the application. For instance, mapping DTOs received from API requests to domain models, or mapping domain models to response DTOs.
+9. Project Folder Structure
+The project is organized into logical folders to ensure clarity and maintainability:
+
+Model: Contains the core domain models (e.g., Product, Category).
+Features: Houses individual feature implementations, typically organized by entity (e.g., a Products folder). Each feature folder will contain its specific Commands, Queries, Handlers, and potentially local DTOs.
+Data: Manages database interactions, including Marten configuration and Context objects.
+Abstractions: Stores interfaces and abstract base classes for dependency inversion and common contracts.
+10. Monitoring & Operations
+10.1. Health Checks in ASP.NET Core
+Purpose: Health checks provide a way to monitor the status of the application and its critical dependencies.
+Implementation: Health checks are added to the Catalog Microservice, specifically checking the health of the PostgreSQL database connection.
+Exposure: These health checks are exposed as HTTP endpoints (e.g., /health).
+Benefits:
+Realtime Monitoring: Can be configured for various monitoring scenarios.
+Container Orchestration: A container orchestrator (e.g., Kubernetes) may respond to a failing health check by halting a rolling deployment or restarting a container.
+Load Balancing: A load balancer can react to an unhealthy application instance by routing traffic away from it to a healthy instance, ensuring continuous service availability.
+10.2. Containerization
+The entire Catalog Microservice is packaged into a Docker container, simplifying deployment, ensuring environment consistency, and enabling portability across different hosting environments.

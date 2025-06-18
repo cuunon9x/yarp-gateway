@@ -1,0 +1,513 @@
+Ordering Microservice Technical Design Document
+Version: 1.0
+Date: June 15, 2025
+Author: TrinhCV
+
+Table of Contents
+Introduction
+
+Application Use Cases
+
+Architecture Overview
+
+Core Technologies & Libraries
+
+Design Patterns & Principles
+
+Domain Models
+
+REST API Endpoints of Ordering Microservice
+
+Implementation Details
+
+8.1. Infrastructure & Data Interaction
+
+8.2. Asynchronous Order Creation (Event Consumption)
+
+8.3. Order Processing Logic
+
+8.4. Validation & Object Mapping
+
+Project Folder Structure
+
+Monitoring & Operations
+
+10.1. Health Checks in ASP.NET Core
+
+10.2. Containerization
+
+1. Introduction
+This document outlines the technical design and architectural patterns for the new Ordering Microservice. As a critical component in the microservices ecosystem, this service will be responsible for managing the lifecycle of customer orders, from creation initiated by a checkout event to order fulfillment tracking. It will integrate seamlessly with existing services (Catalog, Basket, Discount) and leverage the same modern .NET technologies and architectural principles to ensure consistency, high performance, and reliability across the platform.
+
+2. Application Use Cases
+The Ordering Microservice primarily handles the creation, management, and retrieval of customer orders, reacting to asynchronous events from the Basket service and providing interfaces for order status queries.
+
+Primary Application Use Cases:
+CRUD Ordering Operations:
+
+Get Order with Items: Retrieve orders (can filter by Name and Customer).
+
+Create a new Order: Create a new order (typically via asynchronous event).
+
+Update an existing Order: Modify details of an existing order.
+
+Delete Order: Remove an order.
+
+Add and Remove Item from Order: Manage individual items within an order.
+
+Asynchronous Ordering Operations:
+
+Basket Checkout: Consume Basket Checkout event from RabbitMQ using MassTransit to initiate order creation.
+
+Order Fulfillment: Perform order fulfillment operations (e.g., billing, shipment, notification).
+
+Raise OrderCreated Domain Event: This domain event will be raised internally, leading to an integration event published to the message broker for other services to react.
+
+Ensure data consistency and idempotency for event processing.
+
+3. Architecture Overview
+The Ordering Microservice is an integral part of the larger microservices ecosystem. It is containerized using Docker and primarily interacts with a SQL Server database for persistent storage. Its main integration point is consuming asynchronous events from RabbitMQ, originating from the Basket service.
+
+Overall Microservices Architecture:
+Client Apps (e.g., Shopping.Web): Interact with the microservices through an API Gateway (Yarp).
+
+Yarp API Gateway: Routes incoming requests from client applications to the appropriate microservices (Catalog, Basket, Discount, Ordering).
+
+Basket Microservice: Publishes BasketCheckoutEvent messages to RabbitMQ upon successful checkout.
+
+Ordering Microservice:
+
+Event Consumer: Subscribes to and consumes BasketCheckoutEvent messages from RabbitMQ.
+
+Data Store: Primarily uses SQL Server for storing order data, ensuring transactional integrity and complex querying capabilities.
+
+Inter-service Communication: Primarily asynchronous via RabbitMQ. May perform synchronous calls to other services (e.g., Catalog for product details validation, if not already included in the event) as needed for order processing.
+
+Other Microservices: Catalog (PostgreSQL), Basket (Redis/Marten/PostgreSQL), Discount (SQLite).
+
+Containerization: All microservices are deployed as Docker containers.
+
+Internal "Ordering" Microservice Architecture (Clean Architecture Layers):
+Consistent with the Catalog and Basket Microservices, the OrderingAPI will adhere to a Clean Architecture style, organized into 4 distinct layers, and combined with Vertical Slice Architecture and CQRS (Command Query Responsibility Segregation) for internal organization, maintainability, and scalability. These layers are implemented as separate Class Library projects that reference each other according to Clean Architecture principles: Ordering.Domain, Ordering.Application, Ordering.Infrastructure, Ordering.API.
+
+Domain Layer:
+
+Tactical DDD implementations, including entities, value objects, and aggregates.
+
+Focus on Rich-domain model over Anemic-domain model.
+
+Handles Domain Events & Integration Events definitions.
+
+Application Layer:
+
+CQRS with MediatR library to implement Command and Command Handlers.
+
+MediatR Pipeline Behaviours (for Validation, Logging).
+
+Domain Event Handlers with MediatR INotificationHandler.
+
+Infrastructure Layer:
+
+Entity Framework Core 8 Code First Approach, Migrations and SQL Server Connection.
+
+EF Core 8 Relations and DDD ValueObject Mapping with ComplexType and ComplexProperty.
+
+Auto Migrate and Seed EF Core Entities to SQL Server DB when Application Startup.
+
+EF Core Interceptors: SaveChangesInterceptor.
+
+API Layer (Presentation):
+
+Using Carter for Minimal API endpoint definition.
+
+Includes Cross-Cutting Concerns such as Custom Exception Handler for the Ordering Microservice.
+
+4. Core Technologies & Libraries
+The Ordering Microservice will leverage a consistent technology stack with the existing microservices, adding specific components for its data store and messaging needs. Libraries are organized by layer:
+
+.NET 8 (ASP.NET Core): The foundational framework for building the service's API and event consumers.
+
+SQL Server: The chosen relational database for persistent and transactional storage of order data.
+
+RabbitMQ: A robust message broker for asynchronous communication and event consumption/publishing.
+
+MassTransit: A distributed application framework for .NET, simplifying message-based communication with RabbitMQ, including consumer definition and event publishing.
+
+Docker: For containerization and consistent deployment.
+
+Libraries NuGet Packages:
+Domain Layer Libraries:
+
+No specific 3rd party library.
+
+Infrastructure Data Libraries:
+
+Entity Framework Core packages for SQL Server and design tools.
+
+Application UC Layer Libraries:
+
+Libraries from BuildingBlocks (e.g., MediatR, FluentValidation).
+
+Mapster for object mapping.
+
+Presentation API Layer Libraries:
+
+ASP.NET Core libraries.
+
+Carter for defining minimal API endpoints.
+
+5. Design Patterns & Principles
+The Ordering Microservice will consistently apply the robust design patterns and principles used across the ecosystem, embodying Clean Architecture principles:
+
+Common Principles:
+SOLID Principles:
+
+Single Responsibility Principle: Each component or module should be responsible for only one functionality.
+
+Open-Closed Principle: Systems should be extendable without changing existing architecture.
+
+Liskov Substitution Principle: Systems can be substituted for each other easily (e.g., plug-in services that can be shifted easily).
+
+Interface Segregation Principle: No code should be forced to depend on methods it doesn't use.
+
+Dependency Inversion Principle: High-level modules should not depend on low-level modules; both should depend on abstractions.
+
+KISS (Keep It Simple, Stupid): Strive for simplicity in design and implementation.
+
+YAGNI (You Ain't Gonna Need It): Avoid adding functionality until it's actually needed.
+
+Separation of Concerns (SoC): Each part of the application should handle a separate concern.
+
+Dependency Injection (DI): Ensures loose coupling, testability, and maintainability.
+
+Domain Layer Patterns:
+DDD Tactical Patterns: Design a DDD-oriented microservice.
+
+The Domain Entity pattern: With Entity Base classes (e.g., from a SeedWork project if available). An Entity is an object that is identified by its identity (ID), rather than its attributes. Identity makes each entity unique, even if other attributes are the same. Entities are used to represent objects in the system that have a distinct identity and lifecycle. For the Ordering microservice, an Order can be an Entity, uniquely identified by an OrderId, even if other attributes (like date, total amount) are identical to another order.
+
+Rich-domain model: Prefer domain logic residing within domain objects over anemic models.
+
+Value Object pattern: For modeling descriptive aspects of the domain with no conceptual identity. Value Objects are immutable and are often used to encapsulate complex attributes. Example: An Address used in an Order might be a Value Object, as it is important for the order but does not define the order's identity.
+
+Aggregate pattern: Define boundaries for consistency within the domain, with an Aggregate Root or Root Entity.
+
+Strong Typed IDs Pattern: Use dedicated value objects for IDs (e.g., OrderId) to enhance type safety.
+
+Domain Events vs Integration Events:
+
+Domain Events: Published and consumed within a single domain. Strictly within the boundary of the microservice/domain context. Indicate something that has happened within the aggregate. In-process and synchronously, sent using an in-memory message bus. Example: OrderPlacedEvent.
+
+Integration Events: Used to communicate state changes or events between different bounded contexts or microservices. Overall system's reaction to certain domain events. Asynchronously, sent with a message broker over a queue. Example: After handling OrderPlacedEvent, an OrderPlacedIntegrationEvent might be published to a message broker like RabbitMQ, then consumed by other microservices.
+
+Infrastructure Data Layer Patterns:
+Repository Pattern: Providing an abstraction layer for data persistence.
+
+EF Core ORM: Applying Code First Approach, handling Migrations, and Seeding Database.
+
+Value Object Complex Types: Mapping value objects as complex types within EF Core entities.
+
+EF Aggregate Root Entities: Configuration to ensure aggregates are correctly handled by EF Core.
+
+Entity Configurations with ModelBuilder: Using Fluent API for mapping DDD concepts to EF Core entities.
+
+Raise & Dispatch Domain Events: Integrating domain event raising with EF Core's SaveChanges and dispatching them with MediatR.
+
+Application UC Layer Patterns:
+CQRS and CQS Pattern (Command Query Separation): Separates read (queries) and write (commands) operations for improved scalability and clarity.
+
+Command and Command Handler patterns: Define actions and their respective handlers.
+
+Mediator Pattern: Facilitates in-process object interaction via MediatR, including MediatR Pipeline Behaviours.
+
+Fluent Validation, Logging Cross-cutting concerns: Integrated into the MediatR pipeline.
+
+6. Domain Models
+The primary domain models for the Ordering Microservice will be Order, OrderItem, Customer, and related Address, PaymentInfo, and Product (referenced from Catalog service). The primary domain models are Order and OrderItem.
+
+Order Model:
+public class Order : Aggregate<OrderId> // Assuming OrderId is a strong-typed ID
+{
+    private readonly List<OrderItem> _orderItems;
+    public IReadOnlyList<OrderItem> OrderItems => _orderItems.AsReadOnly();
+
+    public CustomerId CustomerId { get; private set; } // Assuming CustomerId is a strong-typed ID
+    public string OrderName { get; private set; } // New property from use cases
+    public Address ShippingAddress { get; private set; }
+    public Address BillingAddress { get; private set; }
+    public PaymentInfo PaymentInfo { get; private set; }
+    public OrderStatus Status { get; private set; } // Enum: Pending, Processing, Shipped, Delivered, Cancelled
+    public decimal TotalAmount { get; private set; }
+    public DateTime OrderDate { get; private set; } // Renamed from CreateDate
+    // ... other properties, e.g., tracking numbers, etc.
+
+    // Constructor for creating new Order (rich domain model)
+    private Order() { _orderItems = new List<OrderItem>(); } // For EF Core
+    public static Order Create(CustomerId customerId, string orderName, Address shippingAddress, Address billingAddress, PaymentInfo paymentInfo, List<OrderItem> orderItems)
+    {
+        var order = new Order
+        {
+            Id = OrderId.Of(Guid.NewGuid()), // Assuming Strong-Typed ID creation
+            CustomerId = customerId,
+            OrderName = orderName,
+            ShippingAddress = shippingAddress,
+            BillingAddress = billingAddress,
+            PaymentInfo = paymentInfo,
+            Status = OrderStatus.Pending, // Initial status
+            OrderDate = DateTime.UtcNow,
+            _orderItems = orderItems
+        };
+        order.CalculateTotalAmount(); // Calculate total based on items
+        // Raise a domain event, e.g., new OrderCreatedDomainEvent(order.Id, order.CustomerId, ...)
+        return order;
+    }
+
+    // Methods for adding/removing items (encapsulating collection logic)
+    public void AddOrderItem(OrderItem item)
+    {
+        _orderItems.Add(item);
+        CalculateTotalAmount();
+    }
+
+    public void RemoveOrderItem(Guid orderItemId)
+    {
+        var itemToRemove = _orderItems.FirstOrDefault(x => x.Id == orderItemId);
+        if (itemToRemove != null)
+        {
+            _orderItems.Remove(itemToRemove);
+            CalculateTotalAmount();
+        }
+    }
+
+    // Method to update order status
+    public void UpdateStatus(OrderStatus newStatus)
+    {
+        Status = newStatus;
+        // Raise OrderStatusChangedDomainEvent
+    }
+
+    private void CalculateTotalAmount()
+    {
+        TotalAmount = _orderItems.Sum(item => item.Quantity * item.UnitPrice - item.DiscountAmount);
+    }
+}
+
+public class OrderItem
+{
+    public Guid Id { get; private set; }
+    public Guid ProductId { get; private set; } // Foreign key to Catalog Product
+    public string ProductName { get; private set; }
+    public int Quantity { get; private set; }
+    public decimal UnitPrice { get; private set; }
+    public decimal DiscountAmount { get; private set; } // Discount applied to this item
+    public string ImageFile { get; private set; }
+    public OrderId OrderId { get; private set; } // Strong-typed Foreign key to Order
+
+    // Private constructor for EF Core and internal creation
+    private OrderItem() { }
+    public static OrderItem Create(Guid productId, string productName, int quantity, decimal unitPrice, decimal discountAmount, string imageFile)
+    {
+        return new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            ProductId = productId,
+            ProductName = productName,
+            Quantity = quantity,
+            UnitPrice = unitPrice,
+            DiscountAmount = discountAmount,
+            ImageFile = imageFile
+        };
+    }
+}
+
+// Value Objects (example)
+public record Address(string FirstName, string LastName, string EmailAddress, string Street, string City, string State, string ZipCode, string Country);
+public record PaymentInfo(string CardName, string CardNumber, string Expiration, string Cvv, int PaymentMethod);
+
+// Strong-typed IDs (example)
+public record OrderId(Guid Value);
+public record CustomerId(Guid Value); // Assuming a Customer service with a Guid ID
+
+public class Customer // Simplified Customer entity, could be richer or linked to User service
+{
+    public CustomerId Id { get; set; }
+    public string UserName { get; set; }
+    public string Email { get; set; }
+    // Other customer-specific details
+}
+
+public enum OrderStatus
+{
+    Pending,
+    Processing,
+    Shipped,
+    Delivered,
+    Cancelled
+}
+
+Relationships:
+
+An Order contains a list of OrderItems (1-to-N).
+
+An Order has ShippingAddress, BillingAddress, PaymentInfo as Value Objects.
+
+An Order references a Customer (1-to-1).
+
+OrderItem references Product (from Catalog) and Order.
+
+Domain Event for Basket Checkout:
+
+The BasketCheckoutEvent consumed from RabbitMQ will drive the creation of the Order aggregate.
+
+Raising OrderCreated Domain Event internally will lead to the publication of integration events to the message broker, facilitating communication with other microservices (e.g., Inventory, Payment).
+
+7. REST API Endpoints of Ordering Microservice
+The Ordering Microservice will expose RESTful API endpoints for managing and querying orders.
+
+Method
+
+Request URI
+
+Use Cases
+
+GET
+
+/orders
+
+Get Orders with Pagination
+
+GET
+
+/orders/{orderName}
+
+Get Orders by OrderName
+
+GET
+
+/orders/customer/{customerId}
+
+Get Orders by Customer
+
+POST
+
+/orders
+
+Create a new Order (might be for internal/admin, otherwise async)
+
+PUT
+
+/orders
+
+Update an existing Order
+
+DELETE
+
+/orders/{id}
+
+Delete Order with Id
+
+8. Implementation Details
+8.1. Infrastructure & Data Interaction
+Ordering Microservices has 1 Datastore: SQL Server Relational Database
+
+A relational database (SQL Server) is used for storing Orders and OrderItems.
+
+Entity Framework Core is chosen as the ORM tool, applying a Code-First Approach.
+
+The domain models are mapped to EF Core entities, considering DDD concepts like Aggregates and Value Objects.
+
+Migrations will be used to manage schema changes.
+
+Database Seeding: EF Core Entities will be automatically migrated and seeded to SQL Server DB when the application starts up.
+
+EF Core Interceptors: SaveChangesInterceptor will be used to capture and potentially dispatch domain events.
+
+Repository Pattern: Implement concrete repository classes (e.g., OrderRepository) to encapsulate data access logic for Order and related entities, adhering to the IOrderRepository interface.
+
+8.2. Asynchronous Order Creation (Event Consumption)
+RabbitMQ Consumer: The Ordering Microservice will host a consumer for BasketCheckoutEvent messages published by the BasketAPI.
+
+MassTransit: MassTransit will be configured to handle the message consumption from RabbitMQ. It provides robust capabilities for message deserialization, consumer orchestration, and retry mechanisms.
+
+Consumer Logic: A dedicated MassTransit consumer class (e.g., BasketCheckoutConsumer) will be responsible for:
+
+Receiving the BasketCheckoutEvent.
+
+Mapping the event data to an internal CreateOrderCommand.
+
+Implementing idempotency checks to prevent duplicate order creation if the same event is received multiple times.
+
+8.3. Order Processing Logic
+Event-Driven Order Creation: Upon consuming a BasketCheckoutEvent (and dispatching the internal CreateOrderCommand), the service will:
+
+Validate Event Data/Command: Basic validation of the received event payload and the command.
+
+Create Order Aggregate: Instantiate the Order aggregate using its rich domain model constructor, passing in relevant details from the BasketCheckoutEvent. This constructor will encapsulate the business rules for order creation.
+
+Persist Order: Use the OrderRepository to save the new Order aggregate to the SQL Server database via Entity Framework Core.
+
+Raise & Dispatch Domain Events: The Order aggregate will raise OrderCreatedDomainEvent (or similar) as part of its creation process. These domain events will be dispatched (e.g., via MediatR and EF Core interceptors) and lead to the publication of Integration Events to RabbitMQ. This can trigger other downstream processes like inventory updates, payment processing notifications, or customer notifications.
+
+Idempotency: A key consideration for event consumption. This can be achieved by:
+
+Storing a unique MessageId from the consumed event alongside the created order.
+
+Checking if an order with that MessageId already exists before processing.
+
+8.4. Validation & Object Mapping
+FluentValidation: Will be used for validating:
+
+Incoming API requests (e.g., for GET by orderId or userName, and for POST/PUT requests).
+
+Internal command/query payloads (e.g., CreateOrderCommand).
+
+Validation will be integrated into the MediatR pipeline behaviors.
+
+Mapster: Will be used for efficient object mapping between:
+
+Incoming BasketCheckoutEvent objects and CreateOrderCommand (or directly to Order domain models).
+
+Order domain models and response DTOs for API endpoints.
+
+9. Project Folder Structure
+The project folder structure will consistently follow the Clean Architecture and Vertical Slice Architecture principles, promoting modularity and clear separation of concerns. This will be organized into 3 Class Library projects and 1 Web API project: Ordering.Domain, Ordering.Application, Ordering.Infrastructure, Ordering.API.
+
+Ordering.Domain/
+
+Purpose: Core business entities, value objects, domain events, and base entity classes.
+
+Content: Order.cs, OrderItem.cs, Address.cs (Value Object), PaymentInfo.cs (Value Object), CustomerId.cs (Strong-typed ID), OrderId.cs (Strong-typed ID), OrderCreatedDomainEvent.cs.
+
+Ordering.Application/
+
+Purpose: Application-specific business rules, CQRS commands and handlers, and dependency injection configurations for application-level services.
+
+Content: Features/ (e.g., GetOrderHistory/, GetOrderDetails/, CreateOrder/ with commands, queries, handlers, validators), Services/ (application services), Consumers/ (BasketCheckoutConsumer.cs), Behaviours/ (MediatR pipelines).
+
+Ordering.Infrastructure/
+
+Purpose: Data access implementations, external service integrations, and messaging infrastructure setup.
+
+Content: Data/ (OrderingContext.cs, Repositories/ (IOrderRepository.cs, OrderRepository.cs), Migrations/), MassTransit/ configurations, Interceptors/ (SaveChangesInterceptor.cs), Extensions/ (infrastructure-specific DI).
+
+Main Target of Infra Layer: Mapping Domain Objects (Aggregate, Entity, ValueObjects) to EF Core Entities and Migrate tables into SQL Server Database. Value Object Complex Types, EF Aggregate Root Entities are configured here.
+
+Ordering.API/
+
+Purpose: API contracts, endpoint definitions (Minimal APIs), and cross-cutting concerns for the presentation layer.
+
+Content: Program.cs, Endpoints/ (Carter modules or Minimal API endpoint definitions), Controllers/ (if using traditional controllers), appsettings.json, appsettings.Development.json.
+
+10. Monitoring & Operations
+The Ordering Microservice will incorporate robust monitoring and operational capabilities, consistent with the existing microservices:
+
+10.1. Health Checks in ASP.NET Core
+Purpose: To monitor the operational status of the OrderingAPI and its critical dependencies.
+
+Implementation: Health checks will be added to verify the connectivity and responsiveness of the SQL Server database and the RabbitMQ connection.
+
+Exposure: Health check endpoints will be exposed via HTTP (e.g., /health, /health/ready, /health/live) to allow for various monitoring scenarios (liveness, readiness).
+
+Benefits: A container orchestrator (e.g., Kubernetes) can respond to a failing health check by halting a rolling deployment or restarting a container. A load balancer can react to an unhealthy app by routing traffic away from the failing instance to a healthy instance, ensuring continuous service availability.
+
+10.2. Containerization
+The Ordering Microservice will be packaged into a Docker container, facilitating consistent deployment, environment isolation, and scalability within the microservices ecosystem. Dockerfiles will be created to define the build process and runtime environment.
